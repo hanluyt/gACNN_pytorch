@@ -13,7 +13,7 @@ import random
 import pandas as pd
 import time
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 logger = logging.getLogger(__name__)
 
 class AverageMeter(object):
@@ -38,7 +38,7 @@ def simple_accuracy(preds, labels):
 
 def save_model(args, model):
     model_to_save = model.module if hasattr(model, 'module') else model
-    model_checkpoint = os.path.join(args.output_dir, "%s_roi_cpu.pth" % args.name)
+    model_checkpoint = os.path.join(args.output_dir, "%s_roi_final_0913.pth" % args.name)
     torch.save(model_to_save.state_dict(), model_checkpoint)
     logger.info("Saved model checkpoint to [DIR: %s]", args.output_dir)
 
@@ -79,6 +79,7 @@ def valid(args, model, test_loader, global_step):
     for step, batch in enumerate(epoch_iterator):
         imgs, landmarks, targets = batch['image'], batch['landmarks'] / 8. + 6, batch['label']
         landmarks = roi_select(landmarks)
+        landmarks = landmarks.float()
         imgs, landmarks, targets = imgs.to(args.device), landmarks.to(args.device), targets.to(args.device)
         with torch.no_grad():
             logits = model(imgs, landmarks)
@@ -108,10 +109,10 @@ def valid(args, model, test_loader, global_step):
 def train(args, model):
     """ Train the model """
     # Prepare dataset
-    shuffle = True
-    train_set = FaceLandmarksDataset(csv_file='util/RAF-DB_train_24.csv', root_dir='RAF-DB_train/',
+    shuffle = False
+    train_set = FaceLandmarksDataset(csv_file='train_aug_24.csv', root_dir='RAF_aug_train/',
                                      transform=transforms.Compose([Rescale((224, 224)), ToTensor()]))
-    test_set = FaceLandmarksDataset(csv_file='util/RAF-DB_test_24.csv', root_dir='RAF-DB_test/',
+    test_set = FaceLandmarksDataset(csv_file='test_aug_24.csv', root_dir='RAF_aug_test/',
                                     transform=transforms.Compose([Rescale((224, 224)), ToTensor()]))
 
     train_loader = DataLoader(dataset=train_set, shuffle=shuffle, batch_size=args.batchsize, num_workers=4, pin_memory=True)
@@ -147,6 +148,7 @@ def train(args, model):
         for step, batch in enumerate(epoch_iterator):
             imgs, landmarks, targets = batch['image'], batch['landmarks'] / 8. + 6, batch['label']
             landmarks = roi_select(landmarks)
+            landmarks = landmarks.float()
             imgs, landmarks, targets = imgs.to(args.device), landmarks.to(args.device), targets.to(args.device)
             logits = model(imgs, landmarks)
             train_loss = loss_fct(logits, targets)
@@ -165,6 +167,10 @@ def train(args, model):
             train_loss.backward()
             scheduler.step()
             optimizer.step()
+
+        # for name, parms in model.named_parameters():
+        #     print('->name:', name, '->grad_requires:', parms.requires_grad,
+        #           '->grad_value:', parms.grad)
 
         global_epoch += 1
 
@@ -192,8 +198,8 @@ def train(args, model):
     test_metric = [[acc, loss] for acc, loss in zip(total_test_acc, total_test_loss)]
     train_metric = pd.DataFrame(train_metric, columns=['train_acc', 'train_loss'])
     test_metric = pd.DataFrame(test_metric, columns=['test_acc', 'test_loss'])
-    train_metric.to_csv('train_acnn.csv', index=False)
-    test_metric.to_csv('test_acnn.csv', index=False)
+    train_metric.to_csv('train_acnn_0913.csv', index=False)
+    test_metric.to_csv('test_acnn_0913.csv', index=False)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -204,10 +210,10 @@ def main():
     parser.add_argument("--output_dir", default="acnn_result", type=str,
                         help="The output directory where checkpoints will be written.")
 
-    parser.add_argument("--batchsize", default=128, type=int,
+    parser.add_argument("--batchsize", default=64, type=int,
                         help="Total batch size for training.")
 
-    parser.add_argument("--learning_rate", default=1e-1, type=float,
+    parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for SGD.")
 
     parser.add_argument("--weight_decay", default=5e-4, type=float,

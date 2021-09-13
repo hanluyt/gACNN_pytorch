@@ -51,6 +51,7 @@ class ACNN(nn.Module):
         self.PG24_alpha = nn.ModuleList([self.PG_attention for _ in range(24)])
 
         self.pad = nn.ReflectionPad2d(6)
+        # self.crop = batch_slice(40, 40, 6, 6)
         self.crop = torchvision.ops.roi_pool
         self.PG_fc = nn.Linear(512*6*6, 64)
         self.GG_fc = nn.Linear(512*14*14, 512)
@@ -88,7 +89,8 @@ class ACNN(nn.Module):
     def forward(self, img, landmarks):
         img_feature = self.VGG16(img)  # (B, 512, 28, 28)
         img_pad = self.pad(img_feature)
-        crop_img = self.crop(img_pad, landmarks, output_size=6)
+        # landmarks = landmarks.long()
+        crop_img = self.crop(img_pad, landmarks, output_size=(6, 6))
         crop_img = crop_img.view(24, -1, 512, 6, 6)
 
         GG_conv2 = self.GG_base(img_feature)
@@ -142,12 +144,35 @@ def grid_field(landmarks, cropsize=6):  # landmarks: (B, 24, 2)
     total_crop = torch.cat(total_crop, dim=0)
     return lm_batch, total_crop
 
-def roi_select(landmarks: '(B, 4, 2)')-> '(B*24, 5)':
+def roi_select(landmarks: '(B, 4, 2)') -> '(B*24, 5)':
     landmarks = landmark_resize(landmarks)
     landmarks_right = landmarks[:, 2:] + 3
     landmarks_left = landmarks[:, 2:] - 3
     landmarks = torch.cat([landmarks[:, 0].view(-1, 1), landmarks_left, landmarks_right], dim=1)
 
     return landmarks
+
+
+# if __name__ == '__main__':
+#     model = ACNN()
+#     shuffle = False
+#     device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
+#     model.to(device)
+#     train_set = FaceLandmarksDataset(csv_file='train_acnn.csv', root_dir='original/',
+#                                      transform=ToTensor())
+#     test_set = FaceLandmarksDataset(csv_file='test_acnn.csv', root_dir='original/',
+#                                     transform=ToTensor())
+#     train_loader = DataLoader(dataset=train_set, shuffle=shuffle, batch_size=4, num_workers=0,
+#                               pin_memory=True)
+#     test_loader = DataLoader(dataset=test_set, shuffle=shuffle, batch_size=4, num_workers=8,
+#                              pin_memory=True)
+#     for step, batch in enumerate(train_loader):
+#         imgs, landmarks, targets = batch['image'], batch['landmarks'] / 8. + 6, batch['label']
+#         landmarks = roi_select(landmarks)
+#
+#         imgs, landmarks, targets = imgs.to(device), landmarks.to(device), targets.to(device)
+#         logits = model(imgs, landmarks)
+#         print(logits.size())
+#         break
 
 
